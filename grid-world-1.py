@@ -10,6 +10,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.table import Table
+import os
 
 matplotlib.use('Agg')
 
@@ -137,21 +138,18 @@ def figure_3_2():
                     new_value[i, j] += ACTION_PROB * (reward + DISCOUNT * value[next_i, next_j])
         if np.sum(np.abs(value - new_value)) < 1e-4:
             draw_image(np.round(new_value, decimals=2))
-            plt.savefig('../images/figure_3_2.png')
+            plt.savefig('./images/GW1figure_3_2.png')
             plt.close()
             break
         value = new_value
 
 def figure_3_2_linear_system():
-    '''
-    Here we solve the linear system of equations to find the exact solution.
-    We do this by filling the coefficients for each of the states with their respective right side constant.
-    '''
+
     A = -1 * np.eye(WORLD_SIZE * WORLD_SIZE)
     b = np.zeros(WORLD_SIZE * WORLD_SIZE)
     for i in range(WORLD_SIZE):
         for j in range(WORLD_SIZE):
-            s = [i, j]  # current state
+            s = [i, j]  #current state
             index_s = np.ravel_multi_index(s, (WORLD_SIZE, WORLD_SIZE))
             for a in ACTIONS:
                 s_, r = step(s, a)
@@ -162,34 +160,147 @@ def figure_3_2_linear_system():
 
     x = np.linalg.solve(A, b)
     draw_image(np.round(x.reshape(WORLD_SIZE, WORLD_SIZE), decimals=2))
-    plt.savefig('../images/figure_3_2_linear_system.png')
+    plt.savefig('./images/GW1figure_3_2_linear_system.png')
     plt.close()
 
 def figure_3_5():
     value = np.zeros((WORLD_SIZE, WORLD_SIZE))
     while True:
-        # keep iteration until convergence
+        #keep iteration until convergence
         new_value = np.zeros_like(value)
         for i in range(WORLD_SIZE):
             for j in range(WORLD_SIZE):
                 values = []
                 for action in ACTIONS:
                     (next_i, next_j), reward = step([i, j], action)
-                    # value iteration
+                    #value iteration
                     values.append(reward + DISCOUNT * value[next_i, next_j])
                 new_value[i, j] = np.max(values)
         if np.sum(np.abs(new_value - value)) < 1e-4:
             draw_image(np.round(new_value, decimals=2))
-            plt.savefig('../images/figure_3_5.png')
+            plt.savefig('./images/GW1figure_3_5.png')
             plt.close()
             draw_policy(new_value)
-            plt.savefig('../images/figure_3_5_policy.png')
+            plt.savefig('./images/GW1figure_3_5_policy.png')
             plt.close()
             break
         value = new_value
 
+def get_epsilon_greedy_policy(value_vector, epsilon):
+    num_actions = len(ACTIONS)
+    policy = np.ones((WORLD_SIZE, WORLD_SIZE, num_actions)) * (epsilon / num_actions)
+
+    for i in range(WORLD_SIZE):
+        for j in range(WORLD_SIZE):
+            action_values = []
+            for a, action in enumerate(ACTIONS):
+                (next_i, next_j), reward = step([i, j], action)
+                action_values.append(reward + DISCOUNT * value_vector[next_i, next_j])
+            best_action = np.argmax(action_values)
+            policy[i, j, best_action] += (1.0 - epsilon)
+
+    return policy
+
+
+def policy_iteration():
+    #3(b): Initialize k = 0 - track iteration count
+    k = 0 
+    
+    V = np.zeros((WORLD_SIZE, WORLD_SIZE))  #3(a): V = 0
+    policy = initialize_epsilon_greedy_policy(V, epsilon) #3(c): ϵ-greedy policy
+    
+    while True:
+        #Policy evaluation
+        while True:
+            delta = 0
+            for i in range(WORLD_SIZE):
+                for j in range(WORLD_SIZE):
+                    v = V[i, j]
+                    new_value = 0
+                    for a, action in enumerate(ACTIONS):
+                        (next_i, next_j), reward = step([i, j], action)
+                        new_value += policy[i, j, a] * (reward + DISCOUNT * V[next_i, next_j])
+                    V[i, j] = new_value
+                    delta = max(delta, abs(v - V[i, j]))
+            if delta < 1e-4:  #convergence threshold
+                break
+        
+        #Policy improvement
+        policy_stable = True
+        for i in range(WORLD_SIZE):
+            for j in range(WORLD_SIZE):
+                old_action = np.argmax(policy[i, j])
+                action_values = np.zeros(len(ACTIONS))
+                for a, action in enumerate(ACTIONS):
+                    (next_i, next_j), reward = step([i, j], action)
+                    action_values[a] = reward + DISCOUNT * V[next_i, next_j]
+
+                best_action = np.argmax(action_values) #update to be ϵ-greedy policy
+                for a in range(len(ACTIONS)):
+                    if a == best_action:
+                        policy[i, j, a] = 1 - epsilon + (epsilon / len(ACTIONS))
+                    else:
+                        policy[i, j, a] = epsilon / len(ACTIONS)
+
+                if old_action != best_action:
+                    policy_stable = False
+            
+        
+        k += 1  #3(b): Track iterations
+        print(f"Iteration k = {k}")  #iteration count
+        
+        if policy_stable:
+            break
+    
+    return policy, V
+
+def evaluate_policy(policy, epsilon):
+    A = -1 * np.eye(WORLD_SIZE * WORLD_SIZE)
+    b = np.zeros(WORLD_SIZE * WORLD_SIZE)
+
+    for i in range(WORLD_SIZE):
+        for j in range(WORLD_SIZE):
+            state = [i, j]
+            index_s = np.ravel_multi_index(state, (WORLD_SIZE, WORLD_SIZE))
+            for action_idx, action in enumerate(ACTIONS):
+                prob = policy[i, j, action_idx]  
+                next_state, reward = step(state, action)
+                index_next = np.ravel_multi_index(next_state, (WORLD_SIZE, WORLD_SIZE))
+
+                A[index_s, index_next] += prob * DISCOUNT
+                b[index_s] -= prob * reward
+
+    #solve system of linear equations
+    value_function = np.linalg.solve(A, b).reshape(WORLD_SIZE, WORLD_SIZE)
+
+    #draw and save results
+    draw_image(np.round(value_function, decimals=2))
+    plt.savefig('./images/GW1evaluated_policy_value.png')
+    plt.close()
+
+    draw_policy(value_function)
+    plt.savefig('./images/GW1evaluated_policy.png')
+    plt.close()
+
+    return value_function
+
+
 
 if __name__ == '__main__':
     figure_3_2_linear_system()
-    figure_3_2()
-    figure_3_5()git
+    figure_3_2
+    figure_3_5()
+
+    #TEST
+    #Evaluate_policy with epsilon = 0.2
+    epsilon = 0.2
+    print(f"Evaluating policy with epsilon = {epsilon}")
+    V = np.zeros((WORLD_SIZE, WORLD_SIZE))  #Initial value function
+    test_policy = get_epsilon_greedy_policy(V, epsilon)
+    evaluate_policy(test_policy, epsilon)
+
+    #Evaluate_policy with epsilon = 0.0
+    epsilon = 0.0
+    print(f"Evaluating policy with epsilon = {epsilon}")
+    test_policy = get_epsilon_greedy_policy(V, epsilon)
+    evaluate_policy(test_policy, epsilon)
