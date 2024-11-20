@@ -147,8 +147,8 @@ def evaluate_policy(policy, epsilon_label):
                 b[index_s] -= prob * reward
 
     value_function = np.linalg.solve(A, b).reshape(WORLD_SIZE, WORLD_SIZE)
-    draw_image(np.round(value_function, decimals=2), f"Policy_Value_epsilon_{epsilon_label}")
-    draw_policy(value_function, f"Policy_Policy_epsilon_{epsilon_label}")
+    draw_image(np.round(value_function, decimals=2), f"GW1_Policy_Value_epsilon_{epsilon_label}")
+    draw_policy(value_function, f"GW1_Policy_Policy_epsilon_{epsilon_label}")
     return value_function
 
 if __name__ == '__main__':
