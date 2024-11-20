@@ -21,7 +21,7 @@ B_POS = [0, 3]
 B_PRIME_POS = [2, 3]
 DISCOUNT = 0.9
 
-# left, up, right, down
+#left, up, right, down
 ACTIONS = [np.array([0, -1]),
            np.array([-1, 0]),
            np.array([0, 1]),
@@ -115,6 +115,80 @@ def draw_policy(optimal_values, filename):
     plt.savefig(f"{IMAGES_FOLDER}/{filename}.png")
     plt.close()
 
+def figure_3_2():
+    value = np.zeros((WORLD_SIZE, WORLD_SIZE))
+    while True:
+        # keep iteration until convergence
+        new_value = np.zeros_like(value)
+        for i in range(WORLD_SIZE):
+            for j in range(WORLD_SIZE):
+                for action in ACTIONS:
+                    (next_i, next_j), reward = step([i, j], action)
+                    # bellman equation
+                    new_value[i, j] += ACTION_PROB * (reward + DISCOUNT * value[next_i, next_j])
+        if np.sum(np.abs(value - new_value)) < 1e-4:
+            draw_image(np.round(new_value, decimals=2))
+            plt.savefig('../images/figure_3_2.png')
+            plt.close()
+            break
+        value = new_value
+
+def figure_3_2_linear_system(policy, epsilon_label):
+    """
+    Evaluate a given policy by solving the linear system of equations.
+    Generate the value function and policy images for the given epsilon label.
+    """
+    A = -1 * np.eye(WORLD_SIZE * WORLD_SIZE)
+    b = np.zeros(WORLD_SIZE * WORLD_SIZE)
+
+    for i in range(WORLD_SIZE):
+        for j in range(WORLD_SIZE):
+            state = [i, j]
+            index_s = np.ravel_multi_index(state, (WORLD_SIZE, WORLD_SIZE))
+            for action_idx, action in enumerate(ACTIONS):
+                prob = policy[i, j, action_idx]
+                next_state, reward = step(state, action)
+                index_next = np.ravel_multi_index(next_state, (WORLD_SIZE, WORLD_SIZE))
+
+                A[index_s, index_next] += prob * DISCOUNT
+                b[index_s] -= prob * reward
+
+    # Solve the linear system to compute the value function
+    value_function = np.linalg.solve(A, b).reshape(WORLD_SIZE, WORLD_SIZE)
+
+    # Save the value function image
+    draw_image(np.round(value_function, decimals=2), f"GW1_Linear_Value_epsilon_{epsilon_label}")
+    
+    # Save the policy image based on the computed value function
+    draw_policy(value_function, f"GW1_Linear_Policy_epsilon_{epsilon_label}")
+    
+    return value_function
+
+
+def figure_3_5():
+    value = np.zeros((WORLD_SIZE, WORLD_SIZE))
+    while True:
+        # keep iteration until convergence
+        new_value = np.zeros_like(value)
+        for i in range(WORLD_SIZE):
+            for j in range(WORLD_SIZE):
+                values = []
+                for action in ACTIONS:
+                    (next_i, next_j), reward = step([i, j], action)
+                    # value iteration
+                    values.append(reward + DISCOUNT * value[next_i, next_j])
+                new_value[i, j] = np.max(values)
+        if np.sum(np.abs(new_value - value)) < 1e-4:
+            draw_image(np.round(new_value, decimals=2))
+            plt.savefig('../images/figure_3_5.png')
+            plt.close()
+            draw_policy(new_value)
+            plt.savefig('../images/figure_3_5_policy.png')
+            plt.close()
+            break
+        value = new_value
+
+
 def get_epsilon_greedy_policy(value_vector, epsilon):
     num_actions = len(ACTIONS)
     policy = np.ones((WORLD_SIZE, WORLD_SIZE, num_actions)) * (epsilon / num_actions)
@@ -154,6 +228,8 @@ def evaluate_policy(policy, epsilon_label):
 if __name__ == '__main__':
     epsilon_values = [0.2, 0.0]
     for epsilon in epsilon_values:
-        V = np.zeros((WORLD_SIZE, WORLD_SIZE))
-        test_policy = get_epsilon_greedy_policy(V, epsilon)
-        evaluate_policy(test_policy, f"{epsilon:.1f}")
+        print(f"Testing with epsilon = {epsilon}...")
+        V = np.zeros((WORLD_SIZE, WORLD_SIZE))  # Initial value function
+        test_policy = get_epsilon_greedy_policy(V, epsilon)  # Compute epsilon-greedy policy
+        figure_3_2_linear_system(test_policy, f"{epsilon:.1f}")  # Evaluate the policy
+
