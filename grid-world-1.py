@@ -203,6 +203,58 @@ def get_epsilon_greedy_policy(value_vector, epsilon):
             policy[i, j, best_action] += (1.0 - epsilon)
 
     return policy
+    
+def policy_iteration():
+    #3(b): Initialize k = 0 - track iteration count
+    k = 0 
+    
+    V = np.zeros((WORLD_SIZE, WORLD_SIZE))  #3(a): V = 0
+    policy = initialize_epsilon_greedy_policy(V, epsilon) #3(c): ϵ-greedy policy
+    
+    while True:
+        #Policy evaluation
+        while True:
+            delta = 0
+            for i in range(WORLD_SIZE):
+                for j in range(WORLD_SIZE):
+                    v = V[i, j]
+                    new_value = 0
+                    for a, action in enumerate(ACTIONS):
+                        (next_i, next_j), reward = step([i, j], action)
+                        new_value += policy[i, j, a] * (reward + DISCOUNT * V[next_i, next_j])
+                    V[i, j] = new_value
+                    delta = max(delta, abs(v - V[i, j]))
+            if delta < 1e-4:  #convergence threshold
+                break
+        
+        #Policy improvement
+        policy_stable = True
+        for i in range(WORLD_SIZE):
+            for j in range(WORLD_SIZE):
+                old_action = np.argmax(policy[i, j])
+                action_values = np.zeros(len(ACTIONS))
+                for a, action in enumerate(ACTIONS):
+                    (next_i, next_j), reward = step([i, j], action)
+                    action_values[a] = reward + DISCOUNT * V[next_i, next_j]
+
+                best_action = np.argmax(action_values) #update to be ϵ-greedy policy
+                for a in range(len(ACTIONS)):
+                    if a == best_action:
+                        policy[i, j, a] = 1 - epsilon + (epsilon / len(ACTIONS))
+                    else:
+                        policy[i, j, a] = epsilon / len(ACTIONS)
+
+                if old_action != best_action:
+                    policy_stable = False
+            
+        
+        k += 1  #3(b): Track iterations
+        print(f"Iteration k = {k}")  #iteration count
+        
+        if policy_stable:
+            break
+    
+    return policy, V
 
 def evaluate_policy(policy, epsilon_label):
     A = -1 * np.eye(WORLD_SIZE * WORLD_SIZE)

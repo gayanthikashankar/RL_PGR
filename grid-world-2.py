@@ -46,18 +46,22 @@ def step(state, action):
     chosen_action_idx = np.random.choice(len(ACTIONS), p=next_state_probs)
     chosen_action = ACTIONS[chosen_action_idx]
 
-    next_state = (np.array(state) + chosen_action).tolist()
+    # Ensure state is a numpy array
+    state = np.array(state)
+    next_state = state + chosen_action  # Perform the addition of two NumPy arrays
+    next_state = next_state.tolist()  # Convert back to list if needed for further processing
     x, y = next_state
     if x < 0 or x >= WORLD_SIZE or y < 0 or y >= WORLD_SIZE:
         reward = -1.0
-        next_state = state
-    elif state == A_POS:
+        next_state = state.tolist()  # If out of bounds, stay in the current state
+    elif state.tolist() == A_POS:
         next_state, reward = A_PRIME_POS, 10
-    elif state == B_POS:
+    elif state.tolist() == B_POS:
         next_state, reward = B_PRIME_POS, 5
     else:
         reward = 0
     return next_state, reward
+
 
 def draw_image(image, filename):
     """Draws the gridworld values and saves the image with the specified filename."""
@@ -127,8 +131,8 @@ def draw_policy(optimal_values, filename):
     plt.savefig(f"{IMAGES_FOLDER}/{filename}.png")
     plt.close()
 
-def figure_3_2_linear_system(policy, epsilon_label):
-    """Evaluate a given policy by solving the linear system of equations."""
+def figure_3_2_linear_system():
+    """Solve the linear system of equations for the value function."""
     A = -1 * np.eye(WORLD_SIZE * WORLD_SIZE)
     b = np.zeros(WORLD_SIZE * WORLD_SIZE)
 
@@ -137,22 +141,15 @@ def figure_3_2_linear_system(policy, epsilon_label):
             state = [i, j]
             index_s = np.ravel_multi_index(state, (WORLD_SIZE, WORLD_SIZE))
             for action_idx, action in enumerate(ACTIONS):
-                prob = policy[i, j, action_idx]
+                prob = ACTION_PROB[action_idx]
                 next_state, reward = step(state, action)
                 index_next = np.ravel_multi_index(next_state, (WORLD_SIZE, WORLD_SIZE))
 
                 A[index_s, index_next] += prob * DISCOUNT
                 b[index_s] -= prob * reward
 
-    # Solve the linear system to compute the value function
     value_function = np.linalg.solve(A, b).reshape(WORLD_SIZE, WORLD_SIZE)
-
-    # Save the value function image
-    draw_image(np.round(value_function, decimals=2), f"GW2_Linear_Value_epsilon_{epsilon_label}")
-    
-    # Save the policy image based on the computed value function
-    draw_policy(value_function, f"GW2_Linear_Policy_epsilon_{epsilon_label}")
-    
+    draw_image(np.round(value_function, decimals=2), "GW2_Figure_3_2_Linear")
     return value_function
 
 def figure_3_2():
@@ -196,32 +193,66 @@ def figure_3_5():
     draw_image(value, "GW2_Figure_3_5")
     draw_policy(value, "GW2_Figure_3_5_Policy")
 
-def get_epsilon_greedy_policy(value_vector, epsilon):
-    """Generate epsilon-greedy policy for stochastic grid-world."""
-    num_actions = len(ACTIONS)
-    policy = np.ones((WORLD_SIZE, WORLD_SIZE, num_actions)) * (epsilon / num_actions)
+def policy_iteration(epsilon):
+    """Policy iteration with epsilon-greedy policies."""
+    V = np.zeros((WORLD_SIZE, WORLD_SIZE))  # Initialize V = 0
+    policy = np.ones((WORLD_SIZE, WORLD_SIZE, len(ACTIONS))) / len(ACTIONS)  # Random policy
 
-    for i in range(WORLD_SIZE):
-        for j in range(WORLD_SIZE):
-            action_values = []
-            for a, action in enumerate(ACTIONS):
-                (next_i, next_j), reward = step([i, j], action)
-                action_values.append(reward + DISCOUNT * value_vector[next_i, next_j])
-            best_action = np.argmax(action_values)
-            policy[i, j, best_action] += (1.0 - epsilon)
+    max_policy_eval_iterations = 100  # Limit the number of iterations
+    while True:
+        # Policy Evaluation
+        for _ in range(max_policy_eval_iterations):
+            delta = 0
+            for i in range(WORLD_SIZE):
+                for j in range(WORLD_SIZE):
+                    v = V[i, j]
+                    new_value = 0
+                    for a, action in enumerate(ACTIONS):
+                        (next_i, next_j), reward = step([i, j], action)
+                        new_value += policy[i, j, a] * (reward + DISCOUNT * V[next_i, next_j])
+                    V[i, j] = new_value
+                    delta = max(delta, abs(v - V[i, j]))
+            if delta < 1e-3:  # Relaxed threshold for faster convergence
+                break
 
-    return policy
+        # Policy Improvement
+        policy_stable = True
+        for i in range(WORLD_SIZE):
+            for j in range(WORLD_SIZE):
+                old_action = np.argmax(policy[i, j])
+                action_values = np.zeros(len(ACTIONS))
+                for a, action in enumerate(ACTIONS):
+                    (next_i, next_j), reward = step([i, j], action)
+                    action_values[a] = reward + DISCOUNT * V[next_i, next_j]
+                best_action = np.argmax(action_values)
+                for a in range(len(ACTIONS)):
+                    if a == best_action:
+                        policy[i, j, a] = 1 - epsilon + epsilon / len(ACTIONS)
+                    else:
+                        policy[i, j, a] = epsilon / len(ACTIONS)
+
+                if old_action != best_action:
+                    policy_stable = False
+
+        if policy_stable:
+            break
+
+    return V, policy
+
 
 if __name__ == '__main__':
-    print("Running figure_3_2_linear_system for stochastic actions...")
-    epsilon_values = [0.2, 0.0]
-    for epsilon in epsilon_values:
-        V = np.zeros((WORLD_SIZE, WORLD_SIZE))  # Initial value function
-        policy = get_epsilon_greedy_policy(V, epsilon)  # Generate epsilon-greedy policy
-        figure_3_2_linear_system(policy, f"{epsilon:.1f}")
+    print("Running figure_3_2_linear_system...")
+    figure_3_2_linear_system()
 
-    print("Running figure_3_2 for stochastic actions...")
+    print("Running figure_3_2...")
     figure_3_2()
 
-    print("Running figure_3_5 for stochastic actions...")
+    print("Running figure_3_5...")
     figure_3_5()
+
+    epsilon_values = [0.2, 0.0]
+    for epsilon in epsilon_values:
+        print(f"Running policy_iteration with epsilon = {epsilon}...")
+        V, policy = policy_iteration(epsilon)
+        draw_image(np.round(V, decimals=2), f"GW2_Policy_Iteration_Value_epsilon_{epsilon:.1f}")
+        draw_policy(V, f"GW2_Policy_Iteration_Policy_epsilon_{epsilon:.1f}")
